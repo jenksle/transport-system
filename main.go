@@ -34,12 +34,13 @@ type Config struct {
 type report struct {
 	TransportID    int
 	ActionFlag     string
-	JobNo          int
+	JobNo          string
 	Customer       string
 	Department     string
 	JobDescription string
 	TransportDate  string
 	DateDiff       int
+	ServiceType    string
 }
 
 type data struct {
@@ -67,6 +68,7 @@ type validation struct {
 	Customer       string
 	TransportDate  string
 	ActionFlag     string
+	ServiceType    string
 }
 
 type jobEdit struct {
@@ -78,6 +80,7 @@ type jobEdit struct {
 	Department     string
 	JobDescription string
 	TransportDate  string
+	ServiceType    string
 }
 
 var config Config
@@ -145,12 +148,16 @@ func transportCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 	if r.Method == "POST" {
 
 		output.ActionFlag = r.FormValue("action_flag")
-		output.Department = r.FormValue("department") //electrical, mechanical, electronics
+		output.Department = r.FormValue("department")
 		output.JobNo = r.FormValue("job_no")
 		output.Customer = r.FormValue("customer")
 		output.JobDescription = r.FormValue("job_description")
 		output.TransportDate = r.FormValue("date")
+		output.ServiceType = r.FormValue("service_type")
+
 		const shortForm = "2006-01-02"
+
+		fmt.Println(output.ServiceType)
 
 		if strings.TrimSpace(output.Customer) == "" {
 			output.DisplayMessage = "No customer entered"
@@ -160,12 +167,14 @@ func transportCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 			output.DisplayMessage = "No date entered"
 		} else {
 
-			sql := `INSERT INTO transport (action_flag, department, job_no, customer, job_description, transport_date, is_active)
-					VALUES (?, ?, ?, ?, ?, ?, 'Y')`
+			sql := `INSERT INTO transport (action_flag, department, job_no, customer, job_description, transport_date, service_type, is_active)
+					VALUES (?, ?, ?, ?, ?, ?, ?, 'Y')`
 
 			d, _ := time.Parse(shortForm, output.TransportDate)
 
-			_, err := db.Exec(sql, output.ActionFlag, output.Department, output.JobNo, output.Customer, output.JobDescription, d)
+			fmt.Println(output.ServiceType)
+
+			_, err := db.Exec(sql, output.ActionFlag, output.Department, output.JobNo, output.Customer, output.JobDescription, d, output.ServiceType)
 			if err != nil {
 				log.Fatal(err)
 			}
@@ -206,6 +215,15 @@ func transportCreate(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 				fmt.Println(response.Body)
 				fmt.Println(response.Headers)
 			}
+
+			//set outputs to blank string
+			output.ActionFlag = ""
+			output.Department = ""
+			output.JobNo = ""
+			output.Customer = ""
+			output.JobDescription = ""
+			output.TransportDate = ""
+			output.ServiceType = ""
 
 		}
 	}
@@ -250,7 +268,7 @@ func completeList(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 	var output data
 
-	sql1 := `SELECT transport_id, action_flag, job_no, customer, department, job_description, COALESCE(CONVERT(NVARCHAR(11), transport_date, 106), '-')
+	sql1 := `SELECT transport_id, action_flag, job_no, customer, department, job_description, COALESCE(CONVERT(NVARCHAR(11), transport_date, 106), '-'), service_type
 			 FROM transport
 			 WHERE is_active = 'Y'
 			 ORDER BY transport_date DESC`
@@ -267,7 +285,7 @@ func completeList(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 		var r report
 
-		err := rows.Scan(&r.TransportID, &r.ActionFlag, &r.JobNo, &r.Customer, &r.Department, &r.JobDescription, &r.TransportDate)
+		err := rows.Scan(&r.TransportID, &r.ActionFlag, &r.JobNo, &r.Customer, &r.Department, &r.JobDescription, &r.TransportDate, &r.ServiceType)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -279,6 +297,14 @@ func completeList(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 		} else {
 			r.ActionFlag = "Future"
 		}
+
+		if r.ServiceType == "R" {
+			r.ServiceType = "Regular"
+		} else if r.ServiceType == "E" {
+			r.ServiceType = "Emergency"
+		}
+
+		fmt.Println(r.ServiceType)
 
 		output.ReportsAll = append(output.ReportsAll, r)
 
@@ -318,11 +344,11 @@ func editJob(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 
 	var output jobEdit
 
-	sql1 := `SELECT transport_id, action_flag, job_no, customer, department, job_description, CONVERT(NVARCHAR(10), transport_date, 120)
+	sql1 := `SELECT transport_id, action_flag, job_no, customer, department, job_description, CONVERT(NVARCHAR(10), transport_date, 120), service_type
 					FROM transport
 				WHERE transport_id = ?`
 
-	err := db.QueryRow(sql1, TransportID).Scan(&output.TransportID, &output.ActionFlag, &output.JobNo, &output.Customer, &output.Department, &output.JobDescription, &output.TransportDate)
+	err := db.QueryRow(sql1, TransportID).Scan(&output.TransportID, &output.ActionFlag, &output.JobNo, &output.Customer, &output.Department, &output.JobDescription, &output.TransportDate, &output.ServiceType)
 	if err != nil && err != sql.ErrNoRows {
 		log.Fatal(err)
 	}
@@ -336,6 +362,7 @@ func editJob(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		output.Customer = r.FormValue("customer")
 		output.JobDescription = r.FormValue("job_description")
 		output.TransportDate = r.FormValue("date")
+		output.ServiceType = r.FormValue("service_type")
 
 		const shortForm = "2006-01-02"
 
@@ -348,12 +375,12 @@ func editJob(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
 		} else {
 
 			sql2 := `UPDATE transport
-				 	SET action_flag = ?, department = ?, job_no = ?, customer = ?, job_description = ?, transport_date = ?
-				 WHERE transport_id = ?`
+				 	 	SET action_flag = ?, department = ?, job_no = ?, customer = ?, job_description = ?, transport_date = ?, service_type = ?
+				 	 WHERE transport_id = ?`
 
 			d, _ := time.Parse(shortForm, output.TransportDate)
 
-			_, err := db.Exec(sql2, output.ActionFlag, output.Department, output.JobNo, output.Customer, output.JobDescription, d, output.TransportID)
+			_, err := db.Exec(sql2, output.ActionFlag, output.Department, output.JobNo, output.Customer, output.JobDescription, d, output.ServiceType, output.TransportID)
 			if err != nil && err != sql.ErrNoRows {
 				log.Fatal(err)
 			}
